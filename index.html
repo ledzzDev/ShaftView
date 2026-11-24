@@ -85,6 +85,22 @@
   .tabbar button.active{color:var(--accent);}
   .tabbar button.active svg{ filter:drop-shadow(0 0 3px var(--accent)); }
   .tabbar svg{width:20px; height:20px;}
+  .undo-toast{
+    position:fixed; left:12px; right:12px; bottom:calc(64px + env(safe-area-inset-bottom) + 10px);
+    max-width:616px; margin:0 auto; z-index:20;
+    background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px 14px;
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    box-shadow:0 4px 16px rgba(0,0,0,0.4);
+  }
+  .undo-toast span{font-size:14px;}
+  .undo-toast button{background:none; border:none; color:var(--accent); font-weight:700; font-size:14px; padding:4px 8px; flex-shrink:0;}
+  .clock-picker{display:flex; justify-content:center; padding:10px 0 4px;}
+  .clock-picker svg{width:132px; height:132px;}
+  .clock-face-ring{fill:none; stroke:var(--border); stroke-width:1.5;}
+  .clock-tick circle{fill:var(--bg); stroke:var(--border); stroke-width:1; cursor:pointer;}
+  .clock-tick text{fill:var(--text); font-size:12px; font-family:inherit; text-anchor:middle; dominant-baseline:central; pointer-events:none; user-select:none;}
+  .clock-tick.active circle{fill:var(--accent); stroke:var(--accent);}
+  .clock-tick.active text{fill:#1c1c1e; font-weight:700;}
   svg.diagram{width:100%; height:auto; display:block; background:var(--bg); border-radius:10px;}
   .legend{display:flex; flex-wrap:wrap; gap:10px; font-size:11px; color:var(--sub); margin-top:8px;}
   .legend span{display:flex; align-items:center; gap:4px;}
@@ -365,6 +381,11 @@
         <div class="row"><label>Instrument reading<span class="hint">&micro;s, optional &mdash; fills depth below</span></label><input type="number" id="indTimeRadial" step="0.01" placeholder="e.g. 13.5"></div>
         <div class="row"><label>Depth from OD<span class="hint">mm</span></label><input type="number" id="indDepthRadial" step="0.5"></div>
         <div class="row"><label>Clock position<span class="hint">optional</span></label><input type="text" id="indClock" placeholder="e.g. 3 o'clock"></div>
+        <div class="clock-picker">
+          <svg viewBox="0 0 120 120" id="clockSvg">
+            <circle class="clock-face-ring" cx="60" cy="60" r="52"></circle>
+          </svg>
+        </div>
       </div>
 
       <div class="row"><label>Amplitude<span class="hint">%, optional</span></label><input type="number" id="indAmplitude" step="1" min="0" max="200"></div>
@@ -434,6 +455,11 @@
     Analysis
   </button>
 </nav>
+
+<div id="undoToast" class="undo-toast" style="display:none;">
+  <span id="undoToastText"></span>
+  <button id="undoToastBtn">Undo</button>
+</div>
 
 <script>
 (function(){
@@ -508,6 +534,27 @@
     function pad(n){ return (n<10?"0":"")+n; }
     return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
   }
+
+  /* ---------- Undo-on-delete ---------- */
+  var pendingUndo = null; // { timeoutId, restore }
+  function showUndoToast(label, restoreFn){
+    if(pendingUndo) clearTimeout(pendingUndo.timeoutId);
+    $("undoToastText").textContent = "Deleted " + label;
+    $("undoToast").style.display = "flex";
+    var timeoutId = setTimeout(function(){
+      $("undoToast").style.display = "none";
+      pendingUndo = null;
+    }, 6000);
+    pendingUndo = { timeoutId: timeoutId, restore: restoreFn };
+  }
+  $("undoToastBtn").addEventListener("click", function(){
+    if(!pendingUndo) return;
+    clearTimeout(pendingUndo.timeoutId);
+    var restore = pendingUndo.restore;
+    pendingUndo = null;
+    $("undoToast").style.display = "none";
+    restore();
+  });
 
   function velocityMmUs(){ return state.velocity/1000; }
 
@@ -727,8 +774,14 @@
     bindProbeForm(); save();
   }
   function deleteProbePreset(id){
-    state.probePresets = state.probePresets.filter(function(x){ return x.id!==id; });
+    var idx = state.probePresets.findIndex(function(x){ return x.id===id; });
+    if(idx<0) return;
+    var removed = state.probePresets[idx];
+    state.probePresets.splice(idx,1);
     save(); renderProbePresets();
+    showUndoToast('preset "'+removed.name+'"', function(){
+      state.probePresets.splice(idx,0,removed); save(); renderProbePresets();
+    });
   }
   $("saveProbePresetBtn").addEventListener("click", function(){
     var nameInput = $("probePresetName");
@@ -829,7 +882,16 @@
     wrap.querySelectorAll(".sec-od").forEach(function(inp){ inp.addEventListener("input", function(){ state.sections[+this.dataset.i].od = Math.max(0.1, parseFloat(this.value)||0); save(); }); });
     wrap.querySelectorAll(".sec-len").forEach(function(inp){ inp.addEventListener("input", function(){ state.sections[+this.dataset.i].len = Math.max(0.1, parseFloat(this.value)||0); save(); }); });
     wrap.querySelectorAll(".sec-id").forEach(function(inp){ inp.addEventListener("input", function(){ state.sections[+this.dataset.i].id = Math.max(0, parseFloat(this.value)||0); save(); }); });
-    wrap.querySelectorAll(".rm").forEach(function(btn){ btn.addEventListener("click", function(){ state.sections.splice(+this.dataset.i,1); renderSections(); renderRadialSelect(); save(); }); });
+    wrap.querySelectorAll(".rm").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        var idx = +this.dataset.i;
+        var removed = state.sections[idx];
+        state.sections.splice(idx,1); renderSections(); renderRadialSelect(); save();
+        showUndoToast("section", function(){
+          state.sections.splice(idx,0,removed); renderSections(); renderRadialSelect(); save();
+        });
+      });
+    });
   }
   $("addSectionBtn").addEventListener("click", function(){
     var last = state.sections[state.sections.length-1];
@@ -858,8 +920,14 @@
     renderSections(); renderRadialSelect(); save();
   }
   function deleteShaftPreset(id){
-    state.shaftPresets = state.shaftPresets.filter(function(x){ return x.id!==id; });
+    var idx = state.shaftPresets.findIndex(function(x){ return x.id===id; });
+    if(idx<0) return;
+    var removed = state.shaftPresets[idx];
+    state.shaftPresets.splice(idx,1);
     save(); renderShaftPresets();
+    showUndoToast('preset "'+removed.name+'"', function(){
+      state.shaftPresets.splice(idx,0,removed); save(); renderShaftPresets();
+    });
   }
   $("saveShaftPresetBtn").addEventListener("click", function(){
     var nameInput = $("shaftPresetName");
@@ -975,9 +1043,14 @@
     save();
   }
   function deleteJob(id){
-    if(!window.confirm("Delete this saved inspection? This can't be undone.")) return;
-    state.jobs = state.jobs.filter(function(x){ return x.id!==id; });
+    var idx = state.jobs.findIndex(function(x){ return x.id===id; });
+    if(idx<0) return;
+    var removed = state.jobs[idx];
+    state.jobs.splice(idx,1);
     save(); renderJobsList();
+    showUndoToast('inspection "'+removed.name+'"', function(){
+      state.jobs.splice(idx,0,removed); save(); renderJobsList();
+    });
   }
   $("saveJobBtn").addEventListener("click", function(){
     var nameInput = $("jobSaveName");
@@ -1383,6 +1456,36 @@
   /* ---------- Analysis mode ---------- */
   var indState = { type:"axial", fromEnd:"near" };
 
+  /* ---------- Clock-position dial ---------- */
+  function buildClockDial(){
+    var svg = $("clockSvg");
+    var cx=60, cy=60, r=42;
+    for(var h=1; h<=12; h++){
+      var angle = (h%12)*30*Math.PI/180 - Math.PI/2; // 12 at top, clockwise
+      var x = cx + r*Math.cos(angle), y = cy + r*Math.sin(angle);
+      var g = document.createElementNS("http://www.w3.org/2000/svg","g");
+      g.setAttribute("class","clock-tick");
+      g.dataset.hour = h;
+      g.innerHTML = '<circle cx="'+x+'" cy="'+y+'" r="12"></circle><text x="'+x+'" y="'+y+'">'+h+'</text>';
+      g.addEventListener("click", function(){
+        $("indClock").value = this.dataset.hour+" o'clock";
+        highlightClockTick(this.dataset.hour);
+      });
+      svg.appendChild(g);
+    }
+  }
+  function highlightClockTick(hour){
+    document.querySelectorAll("#clockSvg .clock-tick").forEach(function(g){
+      g.classList.toggle("active", hour!=null && g.dataset.hour===String(hour));
+    });
+  }
+  function syncClockDialFromText(){
+    var m = $("indClock").value.trim().match(/^(\d{1,2})\s*(?:o'?\s*clock)?$/i);
+    highlightClockTick(m ? (+m[1]) : null);
+  }
+  buildClockDial();
+  $("indClock").addEventListener("input", syncClockDialFromText);
+
   document.querySelectorAll(".seg-indtype").forEach(function(b){
     b.addEventListener("click", function(){
       indState.type = b.dataset.val;
@@ -1436,6 +1539,7 @@
     state.indications.push(ind);
     save();
     ["indLabel","indTimeAxial","indDepthAxial","indAxialPos","indTimeRadial","indDepthRadial","indClock","indAmplitude","indNotes"].forEach(function(id){ $(id).value=""; });
+    highlightClockTick(null);
     renderAnalysis();
   });
 
@@ -1467,7 +1571,12 @@
     });
     wrap.querySelectorAll(".rm").forEach(function(btn){
       btn.addEventListener("click", function(){
-        state.indications.splice(+this.dataset.i,1); save(); renderAnalysis();
+        var idx = +this.dataset.i;
+        var removed = state.indications[idx];
+        state.indications.splice(idx,1); save(); renderAnalysis();
+        showUndoToast("indication", function(){
+          state.indications.splice(idx,0,removed); save(); renderAnalysis();
+        });
       });
     });
   }
