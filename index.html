@@ -72,6 +72,7 @@
   .preset-item .name{font-size:14px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .preset-item .actions{display:flex; gap:4px; flex-shrink:0;}
   .preset-item button{background:none; border:none; font-size:13px; padding:5px 9px; border-radius:6px; font-weight:600;}
+  .preset-item .export-btn{color:var(--spread);}
   .preset-item .load-btn{color:var(--accent);}
   .preset-item .del-btn{color:var(--danger); font-weight:400;}
   .tabbar{position:fixed; bottom:0; left:0; right:0; display:flex; background:rgba(28,28,30,0.85); backdrop-filter:blur(20px);
@@ -231,10 +232,10 @@
     </div>
 
     <div class="card">
-      <h2>Shaft sections <span style="font-weight:400; color:var(--sub); text-transform:none;">(entry end first)</span></h2>
+      <h2>Shaft sections <span style="font-weight:400; color:var(--sub); text-transform:none;">(near end first)</span></h2>
       <div id="sectionsList"></div>
       <button class="add-btn" id="addSectionBtn">+ Add section</button>
-      <div class="note">Each section is a length of constant outer diameter (OD). Set an inside diameter (ID) greater than 0 to model a bore (hollow section) &mdash; useful for radial wall-thickness checks. Sections are listed in order starting from the end you enter the beam.</div>
+      <div class="note">Each section is a length of constant outer diameter (OD). Set an inside diameter (ID) greater than 0 to model a bore (hollow section) &mdash; useful for radial wall-thickness checks. List sections in physical order starting from one end &mdash; that end becomes the fixed "near end" used everywhere else in the app. The "Probe on" setting elsewhere just picks which end the probe is scanning from for a given scan; it doesn't change this list's order.</div>
     </div>
 
     <div class="card">
@@ -301,7 +302,7 @@
     <div class="card">
       <svg class="diagram" id="liveDiagram" viewBox="0 0 600 260" preserveAspectRatio="xMidYMid meet"></svg>
       <div class="lookup-result" id="liveReadout"></div>
-      <div class="note">Drag the slider to move the probe. In axial mode it scrubs the pulse depth from the entry face; in radial mode it moves the probe physically along the OD, showing the local wall depth as it changes with each section. In axial mode you can also grab the blue probe block in the diagram and drag it to the other end face.</div>
+      <div class="note">Drag the slider to move the probe. In axial mode it scrubs the pulse depth from the entry face; in radial mode it moves the probe physically along the OD, showing the local wall depth as it changes with each section. In axial mode you can also grab the amber probe block in the diagram and drag it to the other end face.</div>
     </div>
   </section>
 
@@ -325,10 +326,12 @@
 
     <div class="card">
       <h2>Saved inspections</h2>
-      <div class="note">A saved inspection captures the probe, shaft geometry, job details and every indication together, so you can keep multiple shafts straight and come back to any of them later.</div>
+      <div class="note">A saved inspection captures the probe, shaft geometry, job details and every indication together, so you can keep multiple shafts straight and come back to any of them later. Use Export to save one as its own file — handy for sending a specific job to someone else or backing it up individually.</div>
       <div class="row"><label>Name</label><input type="text" id="jobSaveName" placeholder="e.g. WO-4471 shaft"></div>
       <button class="add-btn" id="saveJobBtn">+ Save current inspection as job</button>
       <div id="jobsList" style="margin-top:10px;"></div>
+      <input type="file" id="jobImportFile" accept="application/json,.json" style="display:none;">
+      <button class="add-btn" id="jobImportBtn" style="margin-top:10px;">+ Import job from file</button>
       <button class="add-btn" id="newInspectionBtn" style="margin-top:10px; border-color:var(--danger); color:var(--danger);">+ Start new inspection (clears current probe, shaft &amp; indications)</button>
     </div>
 
@@ -387,11 +390,17 @@
 
     <div class="card">
       <h2>Backup & restore</h2>
-      <div class="note">Everything is saved automatically in this browser, but a Home Screen app on iOS can have its storage cleared by the system after long periods of disuse. Export a backup now and then, and keep the text somewhere safe (Notes, email to yourself, etc).</div>
-      <button class="add-btn" id="exportDataBtn" style="margin-top:8px;">Export all data to text below</button>
-      <textarea id="backupText" rows="4" placeholder="Backup text will appear here — copy it somewhere safe" style="margin-top:8px; font-size:11px;"></textarea>
-      <button class="add-btn" id="importDataBtn" style="margin-top:8px;">Restore from pasted backup above</button>
+      <div class="note">Everything is saved automatically in this browser, but a Home Screen app on iOS can have its storage cleared by the system after long periods of disuse. Download a backup file now and then and keep it somewhere safe (Files, email to yourself, cloud storage).</div>
+      <button class="add-btn" id="downloadBackupBtn" style="margin-top:8px;">Download backup file</button>
+      <input type="file" id="restoreBackupFile" accept="application/json,.json" style="display:none;">
+      <button class="add-btn" id="restoreBackupFileBtn" style="margin-top:8px;">Restore from backup file</button>
       <div id="backupStatus" class="note"></div>
+      <details style="margin-top:10px;">
+        <summary style="cursor:pointer; font-size:12px; color:var(--sub);">Or use copy/paste text instead</summary>
+        <button class="add-btn" id="exportDataBtn" style="margin-top:8px;">Export all data to text below</button>
+        <textarea id="backupText" rows="4" placeholder="Backup text will appear here — copy it somewhere safe" style="margin-top:8px; font-size:11px;"></textarea>
+        <button class="add-btn" id="importDataBtn" style="margin-top:8px;">Restore from pasted backup above</button>
+      </details>
     </div>
   </section>
 
@@ -475,6 +484,26 @@
   function fmt(n, d){ if(n===null||n===undefined||!isFinite(n)) return "—"; d = d===undefined?2:d; return (Math.round(n*Math.pow(10,d))/Math.pow(10,d)).toString(); }
   function uid(){ return "id"+Date.now()+Math.floor(Math.random()*10000); }
   function deepCopy(o){ return JSON.parse(JSON.stringify(o)); }
+
+  function downloadJSON(filename, dataObj){
+    var blob = new Blob([JSON.stringify(dataObj, null, 2)], {type:"application/json"});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+  }
+  function safeFilename(name){
+    var cleaned = (name||"").replace(/[^a-z0-9 _-]/gi,"").trim().replace(/\s+/g,"-").slice(0,60);
+    return cleaned || "inspection";
+  }
+  function todayStamp(){
+    var d = new Date();
+    function pad(n){ return (n<10?"0":"")+n; }
+    return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+  }
 
   function velocityMmUs(){ return state.velocity/1000; }
 
@@ -875,14 +904,58 @@
       div.innerHTML =
         '<div style="display:flex; width:100%; justify-content:space-between; align-items:center; gap:8px;">'+
           '<span class="name">'+j.name+'</span>'+
-          '<span class="actions"><button class="load-btn" data-id="'+j.id+'">Load</button><button class="del-btn" data-id="'+j.id+'">Delete</button></span>'+
+          '<span class="actions"><button class="export-btn" data-id="'+j.id+'">Export</button><button class="load-btn" data-id="'+j.id+'">Load</button><button class="del-btn" data-id="'+j.id+'">Delete</button></span>'+
         '</div>'+
         '<span class="hint" style="font-size:11px; color:var(--sub);">'+sub+'</span>';
       wrap.appendChild(div);
     });
+    wrap.querySelectorAll(".export-btn").forEach(function(b){ b.addEventListener("click", function(){ exportJob(this.dataset.id); }); });
     wrap.querySelectorAll(".load-btn").forEach(function(b){ b.addEventListener("click", function(){ loadJob(this.dataset.id); }); });
     wrap.querySelectorAll(".del-btn").forEach(function(b){ b.addEventListener("click", function(){ deleteJob(this.dataset.id); }); });
   }
+  function exportJob(id){
+    var j = state.jobs.find(function(x){ return x.id===id; });
+    if(!j) return;
+    downloadJSON(safeFilename(j.name)+".json", { shaftUtJobExport:1, name:j.name, savedAt:j.savedAt, data:j.data });
+  }
+  function importJobData(parsed){
+    var d = parsed && parsed.data;
+    if(!d || !Array.isArray(d.sections)) return false;
+    state.jobs.push({
+      id: uid(),
+      name: parsed.name || "Imported inspection",
+      savedAt: Date.now(),
+      data: {
+        probe: Object.assign(defaultProbe(), d.probe||{}),
+        velocity: d.velocity || 5920,
+        scan: Object.assign(defaultScan(), d.scan||{}),
+        sections: deepCopy(d.sections),
+        indications: deepCopy(d.indications||[]),
+        job: Object.assign(defaultJob(), d.job||{})
+      }
+    });
+    save(); renderJobsList();
+    return true;
+  }
+  $("jobImportBtn").addEventListener("click", function(){ $("jobImportFile").click(); });
+  $("jobImportFile").addEventListener("change", function(){
+    var file = this.files && this.files[0];
+    this.value = "";
+    if(!file) return;
+    var reader = new FileReader();
+    reader.onload = function(){
+      var parsed;
+      try{ parsed = JSON.parse(reader.result); }catch(e){
+        alert("That file isn't valid JSON — nothing was imported.");
+        return;
+      }
+      if(!importJobData(parsed)){
+        alert("That doesn't look like a Shaft UT Planner job export — nothing was imported.");
+      }
+    };
+    reader.onerror = function(){ alert("Couldn't read that file."); };
+    reader.readAsText(file);
+  });
   function loadJob(id){
     var j = state.jobs.find(function(x){ return x.id===id; });
     if(!j) return;
@@ -936,6 +1009,20 @@
     return el;
   }
   function css(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+  // Spreads labels that would otherwise land close enough to overlap onto alternating
+  // vertical tiers. `entries` is [{i, x}] (i = arbitrary key, x = on-screen position);
+  // returns {i: tier} so callers can look up each entry's tier by its own key.
+  function assignLabelTiers(entries, minSpacing, maxTiers){
+    var sorted = entries.slice().sort(function(a,b){ return a.x-b.x; });
+    var out = {}, lastX = null, tier = 0;
+    sorted.forEach(function(e){
+      tier = (lastX!==null && Math.abs(e.x-lastX) < minSpacing) ? (tier+1)%maxTiers : 0;
+      out[e.i] = tier;
+      lastX = e.x;
+    });
+    return out;
+  }
 
   function drawShaftProfileSVG(svg){
     svg.innerHTML = "";
@@ -1046,6 +1133,7 @@
     svg.appendChild(svgEl("line",{x1:entryX,y1:cy,x2: entryX+dir*total*scaleX, y2:cy, stroke:css("--beam"), "stroke-width":2}));
 
     var feats = axialFeatures();
+    var featTiers = assignLabelTiers(feats.map(function(f,idx){ return {i:idx, x: entryX+dir*f.depth*scaleX}; }), 22, 3);
     feats.forEach(function(f,idx){
       var x = entryX + dir*f.depth*scaleX;
       if(f.reflects){
@@ -1053,7 +1141,7 @@
       } else {
         svg.appendChild(svgEl("circle",{cx:x,cy:cy,r:4,fill:"none",stroke:css("--sub"),"stroke-width":1.2,"stroke-dasharray":"1.5,1.5"}));
       }
-      var labelY = cy - maxDrawH/2 - 10 - (idx%2)*14;
+      var labelY = cy - maxDrawH/2 - 10 - featTiers[idx]*14;
       svg.appendChild(svgEl("line",{x1:x,y1:cy,x2:x,y2:labelY+4,stroke:css("--sub"),"stroke-width":0.5}));
       var t = svgEl("text",{x:x,y:labelY,"text-anchor":"middle",fill: f.reflects?css("--text"):css("--sub"),"font-size":9,"font-weight": f.reflects?"600":"400"});
       t.textContent = fmt(f.depth,0)+"mm";
@@ -1382,13 +1470,27 @@
 
   function drawIndicationMarkers(svg, geo){
     var padX=geo.padX, scaleX=geo.scaleX, scaleY=geo.scaleY, cy=geo.cy, maxDrawH=geo.maxDrawH, total=geo.total;
+
+    // Number labels are staggered onto alternating vertical tiers when indications land
+    // close together on screen, so a cluster of nearby readings stays legible instead of
+    // every label stacking on the same line. Axial and radial indications are tiered
+    // separately since they're drawn at different baselines (centreline vs. section top).
+    var axialEntries = [], radialEntries = [];
+    state.indications.forEach(function(ind, i){
+      var x = padX + clampIndX(ind.x, total)*scaleX;
+      (ind.scanType==="axial" ? axialEntries : radialEntries).push({i:i, x:x});
+    });
+    var axialTiers = assignLabelTiers(axialEntries, 16, 4);
+    var radialTiers = assignLabelTiers(radialEntries, 16, 4);
+
     state.indications.forEach(function(ind, i){
       var clampedX = clampIndX(ind.x, total);
       var x = padX + clampedX*scaleX;
       if(ind.scanType==="axial"){
         svg.appendChild(svgEl("circle",{cx:x,cy:cy,r:5,fill:"none",stroke:css("--ind"),"stroke-width":2}));
         svg.appendChild(svgEl("line",{x1:x,y1:cy-maxDrawH/2-6,x2:x,y2:cy+maxDrawH/2+6,stroke:css("--ind"),"stroke-width":1,"stroke-dasharray":"2,2"}));
-        var t = svgEl("text",{x:x,y:cy-maxDrawH/2-10,"text-anchor":"middle",fill:css("--ind"),"font-size":9,"font-weight":"700"});
+        var labelY = cy - maxDrawH/2 - 10 - axialTiers[i]*13;
+        var t = svgEl("text",{x:x,y:labelY,"text-anchor":"middle",fill:css("--ind"),"font-size":9,"font-weight":"700"});
         t.textContent = (i+1);
         svg.appendChild(t);
       } else {
@@ -1400,7 +1502,8 @@
         var endY = topY + depthUsed*scaleY;
         svg.appendChild(svgEl("line",{x1:x,y1:topY,x2:x,y2:endY,stroke:css("--ind"),"stroke-width":2.5}));
         svg.appendChild(svgEl("circle",{cx:x,cy:endY,r:4,fill:css("--ind")}));
-        var t2 = svgEl("text",{x:x,y:topY-6,"text-anchor":"middle",fill:css("--ind"),"font-size":9,"font-weight":"700"});
+        var labelY2 = topY - 6 - radialTiers[i]*13;
+        var t2 = svgEl("text",{x:x,y:labelY2,"text-anchor":"middle",fill:css("--ind"),"font-size":9,"font-weight":"700"});
         t2.textContent = (i+1);
         svg.appendChild(t2);
       }
@@ -1529,6 +1632,21 @@
   $("generateReportBtn").addEventListener("click", generateReport);
 
   /* ---------- Backup & restore ---------- */
+  $("downloadBackupBtn").addEventListener("click", function(){
+    downloadJSON("shaft-ut-planner-backup-"+todayStamp()+".json", state);
+    $("backupStatus").innerHTML = '<span class="flag-ok">Backup file downloaded.</span>';
+  });
+  $("restoreBackupFileBtn").addEventListener("click", function(){ $("restoreBackupFile").click(); });
+  $("restoreBackupFile").addEventListener("change", function(){
+    var file = this.files && this.files[0];
+    this.value = "";
+    if(!file) return;
+    var reader = new FileReader();
+    reader.onload = function(){ restoreFromBackupText(reader.result); };
+    reader.onerror = function(){ $("backupStatus").innerHTML = '<span class="flag-flaw">Couldn\'t read that file.</span>'; };
+    reader.readAsText(file);
+  });
+
   $("exportDataBtn").addEventListener("click", function(){
     var data = JSON.stringify(state);
     var box = $("backupText");
@@ -1554,9 +1672,12 @@
   $("importDataBtn").addEventListener("click", function(){
     var txt = $("backupText").value.trim();
     if(!txt){ $("backupStatus").innerHTML = '<span class="flag-warn">Paste a backup into the box first.</span>'; return; }
+    restoreFromBackupText(txt);
+  });
+  function restoreFromBackupText(txt){
     var parsed;
     try{ parsed = JSON.parse(txt); }catch(e){
-      $("backupStatus").innerHTML = '<span class="flag-flaw">That text isn\'t valid backup data — nothing was changed.</span>';
+      $("backupStatus").innerHTML = '<span class="flag-flaw">That isn\'t valid backup data — nothing was changed.</span>';
       return;
     }
     if(!parsed || typeof parsed!=="object" || !Array.isArray(parsed.sections)){
@@ -1575,7 +1696,7 @@
     refreshScanConfigUI();
     renderAnalysis();
     $("backupStatus").innerHTML = '<span class="flag-ok">Backup restored.</span>';
-  });
+  }
 
   /* ---------- Lookup (Scan Plan) ---------- */
   $("measuredTime").addEventListener("input", function(){
