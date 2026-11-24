@@ -411,6 +411,8 @@
       <h2>Report</h2>
       <button class="primary-btn" id="generateReportBtn">Generate PDF report</button>
       <div class="note">Opens the print dialog. On iPhone, tap the share icon in the print preview and choose "Save PDF to Files" (or print to a physical printer). The report includes the probe, shaft geometry, scan configuration and every indication above.</div>
+      <button class="add-btn" id="shareSummaryBtn" style="margin-top:10px; display:none;">Share summary</button>
+      <div class="note" id="shareSummaryNote" style="display:none;">Shares a quick text summary of this job (component, inspector, indication count) — for the full report, use Generate PDF report above and share the saved PDF.</div>
     </div>
 
     <div class="card">
@@ -524,6 +526,18 @@
     a.click();
     document.body.removeChild(a);
     setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+  }
+  // Offers the native share sheet (AirDrop, email, Slack, Drive, etc.) when the
+  // platform supports sharing files, so sending a job/backup to someone skips the
+  // save-then-attach dance; falls back to a plain download everywhere else.
+  function shareOrDownloadJSON(filename, dataObj, shareTitle, shareText){
+    var file = null;
+    try{ file = new File([JSON.stringify(dataObj, null, 2)], filename, {type:"application/json"}); }catch(e){}
+    if(file && navigator.canShare && navigator.canShare({files:[file]})){
+      navigator.share({files:[file], title:shareTitle, text:shareText}).catch(function(){});
+      return;
+    }
+    downloadJSON(filename, dataObj);
   }
   function safeFilename(name){
     var cleaned = (name||"").replace(/[^a-z0-9 _-]/gi,"").trim().replace(/\s+/g,"-").slice(0,60);
@@ -988,7 +1002,8 @@
   function exportJob(id){
     var j = state.jobs.find(function(x){ return x.id===id; });
     if(!j) return;
-    downloadJSON(safeFilename(j.name)+".json", { shaftUtJobExport:1, name:j.name, savedAt:j.savedAt, data:j.data });
+    shareOrDownloadJSON(safeFilename(j.name)+".json", { shaftUtJobExport:1, name:j.name, savedAt:j.savedAt, data:j.data },
+      "ShaftView inspection: "+j.name, "Shaft UT inspection job exported from ShaftView.");
   }
   function importJobData(parsed){
     var d = parsed && parsed.data;
@@ -1744,10 +1759,28 @@
   }
   $("generateReportBtn").addEventListener("click", generateReport);
 
+  function buildShareSummaryText(){
+    var lines = ["ShaftView inspection summary"];
+    if(state.job.jobNumber) lines.push("Job #: "+state.job.jobNumber);
+    if(state.job.componentId) lines.push("Component: "+state.job.componentId);
+    if(state.job.inspector) lines.push("Inspector: "+state.job.inspector);
+    if(state.job.inspectionDate) lines.push("Date: "+state.job.inspectionDate);
+    lines.push("Shaft length: "+fmt(totalLength(),0)+" mm");
+    lines.push("Indications recorded: "+state.indications.length);
+    return lines.join("\n");
+  }
+  if(navigator.share){
+    $("shareSummaryBtn").style.display = "";
+    $("shareSummaryNote").style.display = "block";
+    $("shareSummaryBtn").addEventListener("click", function(){
+      navigator.share({ title:"ShaftView inspection summary", text:buildShareSummaryText() }).catch(function(){});
+    });
+  }
+
   /* ---------- Backup & restore ---------- */
   $("downloadBackupBtn").addEventListener("click", function(){
-    downloadJSON("shaftview-backup-"+todayStamp()+".json", state);
-    $("backupStatus").innerHTML = '<span class="flag-ok">Backup file downloaded.</span>';
+    shareOrDownloadJSON("shaftview-backup-"+todayStamp()+".json", state, "ShaftView backup", "Full ShaftView data backup.");
+    $("backupStatus").innerHTML = '<span class="flag-ok">Backup file ready.</span>';
   });
   $("restoreBackupFileBtn").addEventListener("click", function(){ $("restoreBackupFile").click(); });
   $("restoreBackupFile").addEventListener("change", function(){
