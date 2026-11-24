@@ -1,9 +1,16 @@
-const CACHE = "shaftut-v3";
+const CACHE = "shaftut-v4";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon.png", "./icon-192.png", "./icon-512.png", "./icon-512-maskable.png"];
 
 self.addEventListener("install", function(e){
   e.waitUntil(caches.open(CACHE).then(function(c){ return c.addAll(ASSETS); }));
-  self.skipWaiting();
+  // No skipWaiting() here: when an older version is already controlling open pages,
+  // this new worker deliberately stays in "waiting" state so the page can show an
+  // "update available" prompt instead of silently swapping code out from under a
+  // session in progress. The page tells it to proceed via the message handler below.
+});
+
+self.addEventListener("message", function(e){
+  if(e.data === "SKIP_WAITING") self.skipWaiting();
 });
 
 self.addEventListener("activate", function(e){

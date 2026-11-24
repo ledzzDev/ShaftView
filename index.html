@@ -146,6 +146,17 @@
 
 <main>
 
+  <div class="card" id="updateBanner" style="display:none; border-color:var(--accent);">
+    <div style="display:flex; align-items:center; gap:10px;">
+      <div style="flex:1;">
+        <strong style="font-size:14px;">Update available</strong>
+        <div class="note" style="margin-top:2px;">A new version has been downloaded and is ready — your data is saved, reloading won't lose anything.</div>
+      </div>
+      <button id="updateBannerAction" class="add-btn" style="width:auto; margin:0; padding:9px 14px; white-space:nowrap;">Reload</button>
+      <button id="updateBannerClose" aria-label="Dismiss" style="background:none; border:none; color:var(--sub); font-size:20px; padding:0 4px; line-height:1;">&times;</button>
+    </div>
+  </div>
+
   <div class="card" id="installBanner" style="display:none;">
     <div style="display:flex; align-items:center; gap:10px;">
       <div style="flex:1;">
@@ -1656,8 +1667,39 @@
 <script>
   if("serviceWorker" in navigator){
     window.addEventListener("load", function(){
-      navigator.serviceWorker.register("sw.js").catch(function(){});
+      navigator.serviceWorker.register("sw.js").then(function(reg){
+        // A worker found waiting right at registration (e.g. a previous visit downloaded
+        // an update but the page was never reloaded) is just as "ready to apply" as one
+        // that installs during this session, so surface both the same way.
+        if(reg.waiting && navigator.serviceWorker.controller) showUpdateBanner(reg);
+        reg.addEventListener("updatefound", function(){
+          var installing = reg.installing;
+          if(!installing) return;
+          installing.addEventListener("statechange", function(){
+            if(installing.state === "installed" && navigator.serviceWorker.controller){
+              showUpdateBanner(reg);
+            }
+          });
+        });
+      }).catch(function(){});
+
+      var reloadedForUpdate = false;
+      navigator.serviceWorker.addEventListener("controllerchange", function(){
+        if(reloadedForUpdate) return;
+        reloadedForUpdate = true;
+        window.location.reload();
+      });
     });
+  }
+  function showUpdateBanner(reg){
+    var banner = document.getElementById("updateBanner");
+    document.getElementById("updateBannerAction").onclick = function(){
+      if(reg.waiting) reg.waiting.postMessage("SKIP_WAITING");
+    };
+    document.getElementById("updateBannerClose").onclick = function(){
+      banner.style.display = "none";
+    };
+    banner.style.display = "block";
   }
 </script>
 <script>
