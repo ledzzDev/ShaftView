@@ -45,6 +45,7 @@
     background:var(--bg); color:var(--text); width:110px; text-align:right;
   }
   input[type=text], input[type=date]{width:170px; text-align:left;}
+  input.name-field{width:140px;}
   input[type=range]{ width:100%; accent-color:var(--accent); height:32px; }
   textarea{ font-size:14px; padding:8px 10px; border-radius:9px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:100%; resize:vertical; font-family:inherit; margin-top:6px; }
   select{width:auto; text-align:left; -webkit-appearance:none; appearance:none; padding-right:26px;
@@ -167,7 +168,7 @@
   <section class="view" id="view-probe">
     <div class="card">
       <h2>Probe</h2>
-      <div class="row"><label>Name</label><input type="text" id="probeName" value="Probe 1"></div>
+      <div class="row"><label>Name</label><input type="text" class="name-field" id="probeName" value="Probe 1"></div>
       <div class="row"><label>Shape</label>
         <div class="seg" style="width:150px;">
           <button data-val="circular" class="seg-shape active">Circular</button>
@@ -207,7 +208,7 @@
 
     <div class="card">
       <h2>Probe presets</h2>
-      <div class="row"><label>Name</label><input type="text" id="probePresetName" placeholder="e.g. 5MHz 10mm"></div>
+      <div class="row"><label>Name</label><input type="text" class="name-field" id="probePresetName" placeholder="e.g. 5MHz 10mm"></div>
       <button class="add-btn" id="saveProbePresetBtn">+ Save current probe as preset</button>
       <div id="probePresetList" style="margin-top:10px;"></div>
     </div>
@@ -243,7 +244,7 @@
 
     <div class="card">
       <h2>Shaft presets</h2>
-      <div class="row"><label>Name</label><input type="text" id="shaftPresetName" placeholder="e.g. Pump shaft A"></div>
+      <div class="row"><label>Name</label><input type="text" class="name-field" id="shaftPresetName" placeholder="e.g. Pump shaft A"></div>
       <button class="add-btn" id="saveShaftPresetBtn">+ Save current shaft as preset</button>
       <div id="shaftPresetList" style="margin-top:10px;"></div>
     </div>
