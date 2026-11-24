@@ -1,5 +1,5 @@
-const CACHE = "shaftut-v2";
-const ASSETS = ["./", "./index.html", "./icon.png", "./manifest.json"];
+const CACHE = "shaftut-v3";
+const ASSETS = ["./", "./index.html", "./manifest.json", "./icon.png", "./icon-192.png", "./icon-512.png", "./icon-512-maskable.png"];
 
 self.addEventListener("install", function(e){
   e.waitUntil(caches.open(CACHE).then(function(c){ return c.addAll(ASSETS); }));

@@ -146,6 +146,17 @@
 
 <main>
 
+  <div class="card" id="installBanner" style="display:none;">
+    <div style="display:flex; align-items:center; gap:10px;">
+      <div style="flex:1;">
+        <strong style="font-size:14px;">Install Shaft UT Planner</strong>
+        <div class="note" id="installBannerText" style="margin-top:2px;"></div>
+      </div>
+      <button id="installBannerAction" class="add-btn" style="width:auto; margin:0; padding:9px 14px; white-space:nowrap;">Install</button>
+      <button id="installBannerClose" aria-label="Dismiss" style="background:none; border:none; color:var(--sub); font-size:20px; padding:0 4px; line-height:1;">&times;</button>
+    </div>
+  </div>
+
   <!-- PROBE VIEW -->
   <section class="view" id="view-probe">
     <div class="card">
@@ -1648,6 +1659,61 @@
       navigator.serviceWorker.register("sw.js").catch(function(){});
     });
   }
+</script>
+<script>
+(function(){
+  "use strict";
+  var banner = document.getElementById("installBanner");
+  var textEl = document.getElementById("installBannerText");
+  var actionBtn = document.getElementById("installBannerAction");
+  var closeBtn = document.getElementById("installBannerClose");
+  var deferredPrompt = null;
+
+  function isStandalone(){
+    return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+  }
+  function isDismissed(){
+    try{ return localStorage.getItem("shaftut_install_dismissed") === "1"; }catch(e){ return false; }
+  }
+  function dismiss(){
+    try{ localStorage.setItem("shaftut_install_dismissed", "1"); }catch(e){}
+    banner.style.display = "none";
+  }
+  function isIOS(){
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  }
+
+  if(isStandalone() || isDismissed()) return;
+
+  closeBtn.addEventListener("click", dismiss);
+
+  if(isIOS()){
+    // iOS never fires beforeinstallprompt — there's no programmatic install API,
+    // so the only option is to point at the manual Share-sheet flow.
+    textEl.textContent = "Add this to your Home Screen for offline, full-screen use: tap the Share icon, then “Add to Home Screen.”";
+    actionBtn.style.display = "none";
+    banner.style.display = "block";
+  }
+
+  window.addEventListener("beforeinstallprompt", function(e){
+    e.preventDefault();
+    deferredPrompt = e;
+    textEl.textContent = "Install this app for offline, full-screen use with its own icon.";
+    actionBtn.style.display = "";
+    banner.style.display = "block";
+  });
+
+  actionBtn.addEventListener("click", function(){
+    if(!deferredPrompt) return;
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice.finally(function(){
+      deferredPrompt = null;
+      banner.style.display = "none";
+    });
+  });
+
+  window.addEventListener("appinstalled", dismiss);
+})();
 </script>
 </body>
 </html>
