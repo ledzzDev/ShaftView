@@ -13,20 +13,13 @@
 <title>Shaft UT Planner</title>
 <style>
   :root{
-    --bg:#f5f3ef; --card:#fffdfa; --text:#1c1c1e; --sub:#6e6e73; --border:#ddd7cc;
-    --accent:#b8720a; --accent2:#d9480f; --danger:#ff3b30; --good:#34c759;
-    --steel:#c9ccd1; --bore:#f5f3ef; --beam:#ff3b30; --spread:#0e8a9c; --ind:#af52de;
+    --bg:#000000; --card:#1c1c1e; --text:#f2f2f7; --sub:#98989d; --border:#38383a;
+    --accent:#ffb020; --accent2:#ff6a3d; --danger:#ff453a; --good:#30d158;
+    --steel:#4a4d52; --bore:#2c2c2e; --beam:#ff453a; --spread:#26c6da; --ind:#bf5af2;
     --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   }
-  @media (prefers-color-scheme: dark){
-    :root{
-      --bg:#000000; --card:#1c1c1e; --text:#f2f2f7; --sub:#98989d; --border:#38383a;
-      --accent:#ffb020; --accent2:#ff6a3d; --danger:#ff453a; --good:#30d158;
-      --steel:#4a4d52; --bore:#2c2c2e; --beam:#ff453a; --spread:#26c6da; --ind:#bf5af2;
-    }
-  }
   /* Forces the light palette while the report SVG is generated, so diagram
-     colors are always print-legible even when the app is in dark mode. */
+     colors are always print-legible on the printed (white) page. */
   :root.pdf-light-force{
     --bg:#f5f3ef; --card:#fffdfa; --text:#1c1c1e; --sub:#6e6e73; --border:#ddd7cc;
     --accent:#b8720a; --accent2:#d9480f; --danger:#ff3b30; --good:#34c759;
@@ -81,12 +74,11 @@
   .preset-item button{background:none; border:none; font-size:13px; padding:5px 9px; border-radius:6px; font-weight:600;}
   .preset-item .load-btn{color:var(--accent);}
   .preset-item .del-btn{color:var(--danger); font-weight:400;}
-  .tabbar{position:fixed; bottom:0; left:0; right:0; display:flex; background:rgba(255,255,255,0.9); backdrop-filter:blur(20px);
+  .tabbar{position:fixed; bottom:0; left:0; right:0; display:flex; background:rgba(28,28,30,0.85); backdrop-filter:blur(20px);
     border-top:1px solid var(--border); padding-bottom:env(safe-area-inset-bottom); z-index:10;}
-  @media (prefers-color-scheme: dark){ .tabbar{background:rgba(28,28,30,0.85);} }
   .tabbar button{flex:1; background:none; border:none; padding:10px 2px 8px; color:var(--sub); font-size:10px; display:flex; flex-direction:column; align-items:center; gap:3px;}
   .tabbar button.active{color:var(--accent);}
-  @media (prefers-color-scheme: dark){ .tabbar button.active svg{ filter:drop-shadow(0 0 3px var(--accent)); } }
+  .tabbar button.active svg{ filter:drop-shadow(0 0 3px var(--accent)); }
   .tabbar svg{width:20px; height:20px;}
   svg.diagram{width:100%; height:auto; display:block; background:var(--bg); border-radius:10px;}
   .legend{display:flex; flex-wrap:wrap; gap:10px; font-size:11px; color:var(--sub); margin-top:8px;}
@@ -99,8 +91,7 @@
   .flag-warn{color:var(--accent2); font-weight:600;}
   .flag-flaw{color:var(--danger); font-weight:600;}
   .lookup-result{background:var(--bg); border-radius:10px; padding:12px; margin-top:10px; font-size:14px;}
-  .lookup-result .big{font-size:24px; font-weight:700; margin-bottom:2px; font-family:var(--mono); color:var(--accent); letter-spacing:0.01em;}
-  @media (prefers-color-scheme: dark){ .lookup-result .big{ text-shadow:0 0 10px var(--accent); } }
+  .lookup-result .big{font-size:24px; font-weight:700; margin-bottom:2px; font-family:var(--mono); color:var(--accent); letter-spacing:0.01em; text-shadow:0 0 10px var(--accent);}
   svg.diagram text{ font-family:var(--mono); }
   .note{font-size:11px; color:var(--sub); line-height:1.4; margin-top:8px;}
   .empty{text-align:center; color:var(--sub); font-size:13px; padding:14px 0;}
