@@ -1,4 +1,4 @@
-const CACHE = "shaftut-v4";
+const CACHE = "shaftut-v5";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon.png", "./icon-192.png", "./icon-512.png", "./icon-512-maskable.png"];
 
 self.addEventListener("install", function(e){

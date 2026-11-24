@@ -1,6 +1,6 @@
 {
-  "name": "Shaft UT Planner",
-  "short_name": "Shaft UT",
+  "name": "ShaftView",
+  "short_name": "ShaftView",
   "description": "Offline ultrasonic shaft inspection planner and report generator.",
   "id": "./index.html",
   "start_url": "./index.html",
