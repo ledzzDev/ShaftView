@@ -101,6 +101,7 @@
   .clock-tick text{fill:var(--text); font-size:12px; font-family:inherit; text-anchor:middle; dominant-baseline:central; pointer-events:none; user-select:none;}
   .clock-tick.active circle{fill:var(--accent); stroke:var(--accent);}
   .clock-tick.active text{fill:#1c1c1e; font-weight:700;}
+  .ind-photo-thumb{max-width:110px; max-height:110px; border-radius:8px; display:block; border:1px solid var(--border);}
   svg.diagram{width:100%; height:auto; display:block; background:var(--bg); border-radius:10px;}
   .legend{display:flex; flex-wrap:wrap; gap:10px; font-size:11px; color:var(--sub); margin-top:8px;}
   .legend span{display:flex; align-items:center; gap:4px;}
@@ -227,6 +228,8 @@
       <div class="row"><label>Name</label><input type="text" class="name-field" id="probePresetName" placeholder="e.g. 5MHz 10mm"></div>
       <button class="add-btn" id="saveProbePresetBtn">+ Save current probe as preset</button>
       <div id="probePresetList" style="margin-top:10px;"></div>
+      <input type="file" id="probePresetImportFile" accept="application/json,.json" style="display:none;">
+      <button class="add-btn" id="probePresetImportBtn" style="margin-top:10px;">+ Import probe preset from file</button>
     </div>
   </section>
 
@@ -263,6 +266,8 @@
       <div class="row"><label>Name</label><input type="text" class="name-field" id="shaftPresetName" placeholder="e.g. Pump shaft A"></div>
       <button class="add-btn" id="saveShaftPresetBtn">+ Save current shaft as preset</button>
       <div id="shaftPresetList" style="margin-top:10px;"></div>
+      <input type="file" id="shaftPresetImportFile" accept="application/json,.json" style="display:none;">
+      <button class="add-btn" id="shaftPresetImportBtn" style="margin-top:10px;">+ Import shaft preset from file</button>
     </div>
   </section>
 
@@ -389,6 +394,14 @@
       </div>
 
       <div class="row"><label>Amplitude<span class="hint">%, optional</span></label><input type="number" id="indAmplitude" step="1" min="0" max="200"></div>
+      <div class="row slider-row">
+        <label>Photo<span class="hint">optional &mdash; of the surface/indication</span></label>
+        <input type="file" accept="image/*" capture="environment" id="indPhotoFile" style="width:auto; align-self:flex-start;">
+      </div>
+      <div id="indPhotoPreviewWrap" style="display:none; margin-top:4px;">
+        <img id="indPhotoPreview" class="ind-photo-thumb">
+        <button class="rm" id="indPhotoRemoveBtn" style="margin-top:4px;">Remove photo</button>
+      </div>
       <div class="row slider-row"><label>Notes</label><textarea id="indNotes" rows="2" placeholder="optional"></textarea></div>
 
       <button class="add-btn" id="addIndicationBtn" style="margin-top:10px;">+ Add indication</button>
@@ -411,6 +424,8 @@
       <h2>Report</h2>
       <button class="primary-btn" id="generateReportBtn">Generate PDF report</button>
       <div class="note">Opens the print dialog. On iPhone, tap the share icon in the print preview and choose "Save PDF to Files" (or print to a physical printer). The report includes the probe, shaft geometry, scan configuration and every indication above.</div>
+      <button class="add-btn" id="shareSummaryBtn" style="margin-top:10px; display:none;">Share summary</button>
+      <div class="note" id="shareSummaryNote" style="display:none;">Shares a quick text summary of this job (component, inspector, indication count) — for the full report, use Generate PDF report above and share the saved PDF.</div>
     </div>
 
     <div class="card">
@@ -504,8 +519,20 @@
       }
     }catch(e){ /* localStorage unavailable, use defaults */ }
   }
+  var storageWarned = false;
   function save(){
-    try{ localStorage.setItem("shaftut_state_v1", JSON.stringify(state)); }catch(e){}
+    try{
+      localStorage.setItem("shaftut_state_v1", JSON.stringify(state));
+      storageWarned = false;
+    }catch(e){
+      // Most likely a quota overflow — indication photos are the main thing that can
+      // push total storage past typical browser limits. Warn once rather than on every
+      // keystroke; it'll warn again later if a save still fails after space frees up.
+      if(!storageWarned){
+        storageWarned = true;
+        alert("Storage is full — this change may not have been saved. Try removing a photo, or export/delete an old saved inspection to free up space.");
+      }
+    }
   }
   load();
 
@@ -524,6 +551,18 @@
     a.click();
     document.body.removeChild(a);
     setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+  }
+  // Offers the native share sheet (AirDrop, email, Slack, Drive, etc.) when the
+  // platform supports sharing files, so sending a job/backup to someone skips the
+  // save-then-attach dance; falls back to a plain download everywhere else.
+  function shareOrDownloadJSON(filename, dataObj, shareTitle, shareText){
+    var file = null;
+    try{ file = new File([JSON.stringify(dataObj, null, 2)], filename, {type:"application/json"}); }catch(e){}
+    if(file && navigator.canShare && navigator.canShare({files:[file]})){
+      navigator.share({files:[file], title:shareTitle, text:shareText}).catch(function(){});
+      return;
+    }
+    downloadJSON(filename, dataObj);
   }
   function safeFilename(name){
     var cleaned = (name||"").replace(/[^a-z0-9 _-]/gi,"").trim().replace(/\s+/g,"-").slice(0,60);
@@ -760,12 +799,40 @@
     state.probePresets.forEach(function(p){
       var div = document.createElement("div");
       div.className = "preset-item";
-      div.innerHTML = '<span class="name">'+p.name+'</span><span class="actions"><button class="load-btn" data-id="'+p.id+'">Load</button><button class="del-btn" data-id="'+p.id+'">Delete</button></span>';
+      div.innerHTML = '<span class="name">'+p.name+'</span><span class="actions"><button class="export-btn" data-id="'+p.id+'">Export</button><button class="load-btn" data-id="'+p.id+'">Load</button><button class="del-btn" data-id="'+p.id+'">Delete</button></span>';
       wrap.appendChild(div);
     });
+    wrap.querySelectorAll(".export-btn").forEach(function(b){ b.addEventListener("click", function(){ exportProbePreset(this.dataset.id); }); });
     wrap.querySelectorAll(".load-btn").forEach(function(b){ b.addEventListener("click", function(){ loadProbePreset(this.dataset.id); }); });
     wrap.querySelectorAll(".del-btn").forEach(function(b){ b.addEventListener("click", function(){ deleteProbePreset(this.dataset.id); }); });
   }
+  function exportProbePreset(id){
+    var p = state.probePresets.find(function(x){ return x.id===id; });
+    if(!p) return;
+    shareOrDownloadJSON(safeFilename(p.name)+".json",
+      { shaftViewPresetExport:1, kind:"probe", name:p.name, probe:p.probe, velocity:p.velocity },
+      "ShaftView probe preset: "+p.name, "Probe preset exported from ShaftView.");
+  }
+  function importProbePresetData(parsed){
+    if(!parsed || parsed.kind!=="probe" || !parsed.probe) return false;
+    state.probePresets.push({ id:uid(), name:parsed.name||"Imported preset", probe:Object.assign(defaultProbe(),parsed.probe), velocity:parsed.velocity||5920 });
+    save(); renderProbePresets();
+    return true;
+  }
+  $("probePresetImportBtn").addEventListener("click", function(){ $("probePresetImportFile").click(); });
+  $("probePresetImportFile").addEventListener("change", function(){
+    var file = this.files && this.files[0];
+    this.value = "";
+    if(!file) return;
+    var reader = new FileReader();
+    reader.onload = function(){
+      var parsed;
+      try{ parsed = JSON.parse(reader.result); }catch(e){ alert("That file isn't valid JSON — nothing was imported."); return; }
+      if(!importProbePresetData(parsed)) alert("That doesn't look like a ShaftView probe preset export — nothing was imported.");
+    };
+    reader.onerror = function(){ alert("Couldn't read that file."); };
+    reader.readAsText(file);
+  });
   function loadProbePreset(id){
     var p = state.probePresets.find(function(x){ return x.id===id; });
     if(!p) return;
@@ -907,12 +974,40 @@
     state.shaftPresets.forEach(function(p){
       var div = document.createElement("div");
       div.className = "preset-item";
-      div.innerHTML = '<span class="name">'+p.name+'</span><span class="actions"><button class="load-btn" data-id="'+p.id+'">Load</button><button class="del-btn" data-id="'+p.id+'">Delete</button></span>';
+      div.innerHTML = '<span class="name">'+p.name+'</span><span class="actions"><button class="export-btn" data-id="'+p.id+'">Export</button><button class="load-btn" data-id="'+p.id+'">Load</button><button class="del-btn" data-id="'+p.id+'">Delete</button></span>';
       wrap.appendChild(div);
     });
+    wrap.querySelectorAll(".export-btn").forEach(function(b){ b.addEventListener("click", function(){ exportShaftPreset(this.dataset.id); }); });
     wrap.querySelectorAll(".load-btn").forEach(function(b){ b.addEventListener("click", function(){ loadShaftPreset(this.dataset.id); }); });
     wrap.querySelectorAll(".del-btn").forEach(function(b){ b.addEventListener("click", function(){ deleteShaftPreset(this.dataset.id); }); });
   }
+  function exportShaftPreset(id){
+    var p = state.shaftPresets.find(function(x){ return x.id===id; });
+    if(!p) return;
+    shareOrDownloadJSON(safeFilename(p.name)+".json",
+      { shaftViewPresetExport:1, kind:"shaft", name:p.name, sections:p.sections },
+      "ShaftView shaft preset: "+p.name, "Shaft preset exported from ShaftView.");
+  }
+  function importShaftPresetData(parsed){
+    if(!parsed || parsed.kind!=="shaft" || !Array.isArray(parsed.sections)) return false;
+    state.shaftPresets.push({ id:uid(), name:parsed.name||"Imported preset", sections:deepCopy(parsed.sections) });
+    save(); renderShaftPresets();
+    return true;
+  }
+  $("shaftPresetImportBtn").addEventListener("click", function(){ $("shaftPresetImportFile").click(); });
+  $("shaftPresetImportFile").addEventListener("change", function(){
+    var file = this.files && this.files[0];
+    this.value = "";
+    if(!file) return;
+    var reader = new FileReader();
+    reader.onload = function(){
+      var parsed;
+      try{ parsed = JSON.parse(reader.result); }catch(e){ alert("That file isn't valid JSON — nothing was imported."); return; }
+      if(!importShaftPresetData(parsed)) alert("That doesn't look like a ShaftView shaft preset export — nothing was imported.");
+    };
+    reader.onerror = function(){ alert("Couldn't read that file."); };
+    reader.readAsText(file);
+  });
   function loadShaftPreset(id){
     var p = state.shaftPresets.find(function(x){ return x.id===id; });
     if(!p) return;
@@ -988,7 +1083,8 @@
   function exportJob(id){
     var j = state.jobs.find(function(x){ return x.id===id; });
     if(!j) return;
-    downloadJSON(safeFilename(j.name)+".json", { shaftUtJobExport:1, name:j.name, savedAt:j.savedAt, data:j.data });
+    shareOrDownloadJSON(safeFilename(j.name)+".json", { shaftUtJobExport:1, name:j.name, savedAt:j.savedAt, data:j.data },
+      "ShaftView inspection: "+j.name, "Shaft UT inspection job exported from ShaftView.");
   }
   function importJobData(parsed){
     var d = parsed && parsed.data;
@@ -1486,6 +1582,46 @@
   buildClockDial();
   $("indClock").addEventListener("input", syncClockDialFromText);
 
+  /* ---------- Indication photo ---------- */
+  var pendingIndPhoto = null;
+  // Resizes/recompresses the chosen photo client-side before it ever touches
+  // localStorage — an original phone photo can be several MB, which would blow
+  // through typical ~5-10MB localStorage quotas after just a handful of indications.
+  function resizeImageFile(file, maxDim, quality, callback){
+    var reader = new FileReader();
+    reader.onload = function(){
+      var img = new Image();
+      img.onload = function(){
+        var scale = Math.min(1, maxDim/Math.max(img.width, img.height));
+        var cw = Math.max(1, Math.round(img.width*scale)), ch = Math.max(1, Math.round(img.height*scale));
+        var canvas = document.createElement("canvas");
+        canvas.width = cw; canvas.height = ch;
+        canvas.getContext("2d").drawImage(img, 0, 0, cw, ch);
+        callback(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.onerror = function(){ callback(null); };
+      img.src = reader.result;
+    };
+    reader.onerror = function(){ callback(null); };
+    reader.readAsDataURL(file);
+  }
+  function clearPendingIndPhoto(){
+    pendingIndPhoto = null;
+    $("indPhotoFile").value = "";
+    $("indPhotoPreviewWrap").style.display = "none";
+  }
+  $("indPhotoFile").addEventListener("change", function(){
+    var file = this.files && this.files[0];
+    if(!file) return;
+    resizeImageFile(file, 900, 0.7, function(dataUrl){
+      if(!dataUrl){ alert("Couldn't read that photo."); return; }
+      pendingIndPhoto = dataUrl;
+      $("indPhotoPreview").src = dataUrl;
+      $("indPhotoPreviewWrap").style.display = "block";
+    });
+  });
+  $("indPhotoRemoveBtn").addEventListener("click", clearPendingIndPhoto);
+
   document.querySelectorAll(".seg-indtype").forEach(function(b){
     b.addEventListener("click", function(){
       indState.type = b.dataset.val;
@@ -1516,7 +1652,8 @@
       label: $("indLabel").value.trim(),
       scanType: indState.type,
       amplitude: $("indAmplitude").value===""? null : parseFloat($("indAmplitude").value),
-      notes: $("indNotes").value.trim()
+      notes: $("indNotes").value.trim(),
+      photo: pendingIndPhoto
     };
     if(indState.type==="axial"){
       var depth = parseFloat($("indDepthAxial").value);
@@ -1540,6 +1677,7 @@
     save();
     ["indLabel","indTimeAxial","indDepthAxial","indAxialPos","indTimeRadial","indDepthRadial","indClock","indAmplitude","indNotes"].forEach(function(id){ $(id).value=""; });
     highlightClockTick(null);
+    clearPendingIndPhoto();
     renderAnalysis();
   });
 
@@ -1566,7 +1704,8 @@
         '<div class="top"><strong>IND-'+(i+1)+(ind.label?" — "+ind.label:"")+' ('+(ind.scanType==="axial"?"Axial":"Radial")+')</strong><button class="rm" data-i="'+i+'">Remove</button></div>'+
         '<div class="field"><span>'+desc+'</span></div>'+
         (ind.amplitude!=null ? '<div class="field"><span>Amplitude: '+fmt(ind.amplitude,0)+'%</span></div>' : '')+
-        (ind.notes ? '<div class="field"><span>'+ind.notes+'</span></div>' : '');
+        (ind.notes ? '<div class="field"><span>'+ind.notes+'</span></div>' : '')+
+        (ind.photo ? '<a href="'+ind.photo+'" target="_blank" rel="noopener"><img src="'+ind.photo+'" class="ind-photo-thumb" style="margin-top:6px;"></a>' : '');
       wrap.appendChild(div);
     });
     wrap.querySelectorAll(".rm").forEach(function(btn){
@@ -1721,6 +1860,18 @@
     html += section("Indications ("+state.indications.length+")",
       state.indications.length ? table(["ID","Type","Position","Radial depth","Time","Amplitude","Clock","Notes"], indRows) : "<p>No indications recorded.</p>",
       false);
+
+    var photoItems = [];
+    state.indications.forEach(function(ind, i){ if(ind.photo) photoItems.push({num:i+1, label:ind.label, photo:ind.photo}); });
+    if(photoItems.length){
+      var photosHtml = "<div style='display:flex; flex-wrap:wrap; gap:12px;'>" + photoItems.map(function(p){
+        return "<div style='text-align:center; page-break-inside:avoid; break-inside:avoid-page;'>"+
+          "<img src='"+p.photo+"' style='max-width:170px; max-height:170px; border-radius:6px; display:block; border:1px solid #ccc;'>"+
+          "<div style='font-size:10px; margin-top:3px; color:#666;'>IND-"+p.num+(p.label?" ("+p.label+")":"")+"</div></div>";
+      }).join("") + "</div>";
+      html += section("Photos", photosHtml, false);
+    }
+
     html += "<div class='footer'>Report generated by ShaftView. Depths are calculated from the entered probe delay and material velocity — verify critical readings against calibrated equipment and applicable procedures.</div>";
     return html;
   }
@@ -1744,10 +1895,28 @@
   }
   $("generateReportBtn").addEventListener("click", generateReport);
 
+  function buildShareSummaryText(){
+    var lines = ["ShaftView inspection summary"];
+    if(state.job.jobNumber) lines.push("Job #: "+state.job.jobNumber);
+    if(state.job.componentId) lines.push("Component: "+state.job.componentId);
+    if(state.job.inspector) lines.push("Inspector: "+state.job.inspector);
+    if(state.job.inspectionDate) lines.push("Date: "+state.job.inspectionDate);
+    lines.push("Shaft length: "+fmt(totalLength(),0)+" mm");
+    lines.push("Indications recorded: "+state.indications.length);
+    return lines.join("\n");
+  }
+  if(navigator.share){
+    $("shareSummaryBtn").style.display = "";
+    $("shareSummaryNote").style.display = "block";
+    $("shareSummaryBtn").addEventListener("click", function(){
+      navigator.share({ title:"ShaftView inspection summary", text:buildShareSummaryText() }).catch(function(){});
+    });
+  }
+
   /* ---------- Backup & restore ---------- */
   $("downloadBackupBtn").addEventListener("click", function(){
-    downloadJSON("shaftview-backup-"+todayStamp()+".json", state);
-    $("backupStatus").innerHTML = '<span class="flag-ok">Backup file downloaded.</span>';
+    shareOrDownloadJSON("shaftview-backup-"+todayStamp()+".json", state, "ShaftView backup", "Full ShaftView data backup.");
+    $("backupStatus").innerHTML = '<span class="flag-ok">Backup file ready.</span>';
   });
   $("restoreBackupFileBtn").addEventListener("click", function(){ $("restoreBackupFile").click(); });
   $("restoreBackupFile").addEventListener("change", function(){
