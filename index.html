@@ -101,6 +101,7 @@
   .clock-tick text{fill:var(--text); font-size:12px; font-family:inherit; text-anchor:middle; dominant-baseline:central; pointer-events:none; user-select:none;}
   .clock-tick.active circle{fill:var(--accent); stroke:var(--accent);}
   .clock-tick.active text{fill:#1c1c1e; font-weight:700;}
+  .ind-photo-thumb{max-width:110px; max-height:110px; border-radius:8px; display:block; border:1px solid var(--border);}
   svg.diagram{width:100%; height:auto; display:block; background:var(--bg); border-radius:10px;}
   .legend{display:flex; flex-wrap:wrap; gap:10px; font-size:11px; color:var(--sub); margin-top:8px;}
   .legend span{display:flex; align-items:center; gap:4px;}
@@ -393,6 +394,14 @@
       </div>
 
       <div class="row"><label>Amplitude<span class="hint">%, optional</span></label><input type="number" id="indAmplitude" step="1" min="0" max="200"></div>
+      <div class="row slider-row">
+        <label>Photo<span class="hint">optional &mdash; of the surface/indication</span></label>
+        <input type="file" accept="image/*" capture="environment" id="indPhotoFile" style="width:auto; align-self:flex-start;">
+      </div>
+      <div id="indPhotoPreviewWrap" style="display:none; margin-top:4px;">
+        <img id="indPhotoPreview" class="ind-photo-thumb">
+        <button class="rm" id="indPhotoRemoveBtn" style="margin-top:4px;">Remove photo</button>
+      </div>
       <div class="row slider-row"><label>Notes</label><textarea id="indNotes" rows="2" placeholder="optional"></textarea></div>
 
       <button class="add-btn" id="addIndicationBtn" style="margin-top:10px;">+ Add indication</button>
@@ -510,8 +519,20 @@
       }
     }catch(e){ /* localStorage unavailable, use defaults */ }
   }
+  var storageWarned = false;
   function save(){
-    try{ localStorage.setItem("shaftut_state_v1", JSON.stringify(state)); }catch(e){}
+    try{
+      localStorage.setItem("shaftut_state_v1", JSON.stringify(state));
+      storageWarned = false;
+    }catch(e){
+      // Most likely a quota overflow — indication photos are the main thing that can
+      // push total storage past typical browser limits. Warn once rather than on every
+      // keystroke; it'll warn again later if a save still fails after space frees up.
+      if(!storageWarned){
+        storageWarned = true;
+        alert("Storage is full — this change may not have been saved. Try removing a photo, or export/delete an old saved inspection to free up space.");
+      }
+    }
   }
   load();
 
@@ -1561,6 +1582,46 @@
   buildClockDial();
   $("indClock").addEventListener("input", syncClockDialFromText);
 
+  /* ---------- Indication photo ---------- */
+  var pendingIndPhoto = null;
+  // Resizes/recompresses the chosen photo client-side before it ever touches
+  // localStorage — an original phone photo can be several MB, which would blow
+  // through typical ~5-10MB localStorage quotas after just a handful of indications.
+  function resizeImageFile(file, maxDim, quality, callback){
+    var reader = new FileReader();
+    reader.onload = function(){
+      var img = new Image();
+      img.onload = function(){
+        var scale = Math.min(1, maxDim/Math.max(img.width, img.height));
+        var cw = Math.max(1, Math.round(img.width*scale)), ch = Math.max(1, Math.round(img.height*scale));
+        var canvas = document.createElement("canvas");
+        canvas.width = cw; canvas.height = ch;
+        canvas.getContext("2d").drawImage(img, 0, 0, cw, ch);
+        callback(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.onerror = function(){ callback(null); };
+      img.src = reader.result;
+    };
+    reader.onerror = function(){ callback(null); };
+    reader.readAsDataURL(file);
+  }
+  function clearPendingIndPhoto(){
+    pendingIndPhoto = null;
+    $("indPhotoFile").value = "";
+    $("indPhotoPreviewWrap").style.display = "none";
+  }
+  $("indPhotoFile").addEventListener("change", function(){
+    var file = this.files && this.files[0];
+    if(!file) return;
+    resizeImageFile(file, 900, 0.7, function(dataUrl){
+      if(!dataUrl){ alert("Couldn't read that photo."); return; }
+      pendingIndPhoto = dataUrl;
+      $("indPhotoPreview").src = dataUrl;
+      $("indPhotoPreviewWrap").style.display = "block";
+    });
+  });
+  $("indPhotoRemoveBtn").addEventListener("click", clearPendingIndPhoto);
+
   document.querySelectorAll(".seg-indtype").forEach(function(b){
     b.addEventListener("click", function(){
       indState.type = b.dataset.val;
@@ -1591,7 +1652,8 @@
       label: $("indLabel").value.trim(),
       scanType: indState.type,
       amplitude: $("indAmplitude").value===""? null : parseFloat($("indAmplitude").value),
-      notes: $("indNotes").value.trim()
+      notes: $("indNotes").value.trim(),
+      photo: pendingIndPhoto
     };
     if(indState.type==="axial"){
       var depth = parseFloat($("indDepthAxial").value);
@@ -1615,6 +1677,7 @@
     save();
     ["indLabel","indTimeAxial","indDepthAxial","indAxialPos","indTimeRadial","indDepthRadial","indClock","indAmplitude","indNotes"].forEach(function(id){ $(id).value=""; });
     highlightClockTick(null);
+    clearPendingIndPhoto();
     renderAnalysis();
   });
 
@@ -1641,7 +1704,8 @@
         '<div class="top"><strong>IND-'+(i+1)+(ind.label?" — "+ind.label:"")+' ('+(ind.scanType==="axial"?"Axial":"Radial")+')</strong><button class="rm" data-i="'+i+'">Remove</button></div>'+
         '<div class="field"><span>'+desc+'</span></div>'+
         (ind.amplitude!=null ? '<div class="field"><span>Amplitude: '+fmt(ind.amplitude,0)+'%</span></div>' : '')+
-        (ind.notes ? '<div class="field"><span>'+ind.notes+'</span></div>' : '');
+        (ind.notes ? '<div class="field"><span>'+ind.notes+'</span></div>' : '')+
+        (ind.photo ? '<a href="'+ind.photo+'" target="_blank" rel="noopener"><img src="'+ind.photo+'" class="ind-photo-thumb" style="margin-top:6px;"></a>' : '');
       wrap.appendChild(div);
     });
     wrap.querySelectorAll(".rm").forEach(function(btn){
@@ -1796,6 +1860,18 @@
     html += section("Indications ("+state.indications.length+")",
       state.indications.length ? table(["ID","Type","Position","Radial depth","Time","Amplitude","Clock","Notes"], indRows) : "<p>No indications recorded.</p>",
       false);
+
+    var photoItems = [];
+    state.indications.forEach(function(ind, i){ if(ind.photo) photoItems.push({num:i+1, label:ind.label, photo:ind.photo}); });
+    if(photoItems.length){
+      var photosHtml = "<div style='display:flex; flex-wrap:wrap; gap:12px;'>" + photoItems.map(function(p){
+        return "<div style='text-align:center; page-break-inside:avoid; break-inside:avoid-page;'>"+
+          "<img src='"+p.photo+"' style='max-width:170px; max-height:170px; border-radius:6px; display:block; border:1px solid #ccc;'>"+
+          "<div style='font-size:10px; margin-top:3px; color:#666;'>IND-"+p.num+(p.label?" ("+p.label+")":"")+"</div></div>";
+      }).join("") + "</div>";
+      html += section("Photos", photosHtml, false);
+    }
+
     html += "<div class='footer'>Report generated by ShaftView. Depths are calculated from the entered probe delay and material velocity — verify critical readings against calibrated equipment and applicable procedures.</div>";
     return html;
   }
