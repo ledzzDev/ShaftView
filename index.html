@@ -227,6 +227,8 @@
       <div class="row"><label>Name</label><input type="text" class="name-field" id="probePresetName" placeholder="e.g. 5MHz 10mm"></div>
       <button class="add-btn" id="saveProbePresetBtn">+ Save current probe as preset</button>
       <div id="probePresetList" style="margin-top:10px;"></div>
+      <input type="file" id="probePresetImportFile" accept="application/json,.json" style="display:none;">
+      <button class="add-btn" id="probePresetImportBtn" style="margin-top:10px;">+ Import probe preset from file</button>
     </div>
   </section>
 
@@ -263,6 +265,8 @@
       <div class="row"><label>Name</label><input type="text" class="name-field" id="shaftPresetName" placeholder="e.g. Pump shaft A"></div>
       <button class="add-btn" id="saveShaftPresetBtn">+ Save current shaft as preset</button>
       <div id="shaftPresetList" style="margin-top:10px;"></div>
+      <input type="file" id="shaftPresetImportFile" accept="application/json,.json" style="display:none;">
+      <button class="add-btn" id="shaftPresetImportBtn" style="margin-top:10px;">+ Import shaft preset from file</button>
     </div>
   </section>
 
@@ -774,12 +778,40 @@
     state.probePresets.forEach(function(p){
       var div = document.createElement("div");
       div.className = "preset-item";
-      div.innerHTML = '<span class="name">'+p.name+'</span><span class="actions"><button class="load-btn" data-id="'+p.id+'">Load</button><button class="del-btn" data-id="'+p.id+'">Delete</button></span>';
+      div.innerHTML = '<span class="name">'+p.name+'</span><span class="actions"><button class="export-btn" data-id="'+p.id+'">Export</button><button class="load-btn" data-id="'+p.id+'">Load</button><button class="del-btn" data-id="'+p.id+'">Delete</button></span>';
       wrap.appendChild(div);
     });
+    wrap.querySelectorAll(".export-btn").forEach(function(b){ b.addEventListener("click", function(){ exportProbePreset(this.dataset.id); }); });
     wrap.querySelectorAll(".load-btn").forEach(function(b){ b.addEventListener("click", function(){ loadProbePreset(this.dataset.id); }); });
     wrap.querySelectorAll(".del-btn").forEach(function(b){ b.addEventListener("click", function(){ deleteProbePreset(this.dataset.id); }); });
   }
+  function exportProbePreset(id){
+    var p = state.probePresets.find(function(x){ return x.id===id; });
+    if(!p) return;
+    shareOrDownloadJSON(safeFilename(p.name)+".json",
+      { shaftViewPresetExport:1, kind:"probe", name:p.name, probe:p.probe, velocity:p.velocity },
+      "ShaftView probe preset: "+p.name, "Probe preset exported from ShaftView.");
+  }
+  function importProbePresetData(parsed){
+    if(!parsed || parsed.kind!=="probe" || !parsed.probe) return false;
+    state.probePresets.push({ id:uid(), name:parsed.name||"Imported preset", probe:Object.assign(defaultProbe(),parsed.probe), velocity:parsed.velocity||5920 });
+    save(); renderProbePresets();
+    return true;
+  }
+  $("probePresetImportBtn").addEventListener("click", function(){ $("probePresetImportFile").click(); });
+  $("probePresetImportFile").addEventListener("change", function(){
+    var file = this.files && this.files[0];
+    this.value = "";
+    if(!file) return;
+    var reader = new FileReader();
+    reader.onload = function(){
+      var parsed;
+      try{ parsed = JSON.parse(reader.result); }catch(e){ alert("That file isn't valid JSON — nothing was imported."); return; }
+      if(!importProbePresetData(parsed)) alert("That doesn't look like a ShaftView probe preset export — nothing was imported.");
+    };
+    reader.onerror = function(){ alert("Couldn't read that file."); };
+    reader.readAsText(file);
+  });
   function loadProbePreset(id){
     var p = state.probePresets.find(function(x){ return x.id===id; });
     if(!p) return;
@@ -921,12 +953,40 @@
     state.shaftPresets.forEach(function(p){
       var div = document.createElement("div");
       div.className = "preset-item";
-      div.innerHTML = '<span class="name">'+p.name+'</span><span class="actions"><button class="load-btn" data-id="'+p.id+'">Load</button><button class="del-btn" data-id="'+p.id+'">Delete</button></span>';
+      div.innerHTML = '<span class="name">'+p.name+'</span><span class="actions"><button class="export-btn" data-id="'+p.id+'">Export</button><button class="load-btn" data-id="'+p.id+'">Load</button><button class="del-btn" data-id="'+p.id+'">Delete</button></span>';
       wrap.appendChild(div);
     });
+    wrap.querySelectorAll(".export-btn").forEach(function(b){ b.addEventListener("click", function(){ exportShaftPreset(this.dataset.id); }); });
     wrap.querySelectorAll(".load-btn").forEach(function(b){ b.addEventListener("click", function(){ loadShaftPreset(this.dataset.id); }); });
     wrap.querySelectorAll(".del-btn").forEach(function(b){ b.addEventListener("click", function(){ deleteShaftPreset(this.dataset.id); }); });
   }
+  function exportShaftPreset(id){
+    var p = state.shaftPresets.find(function(x){ return x.id===id; });
+    if(!p) return;
+    shareOrDownloadJSON(safeFilename(p.name)+".json",
+      { shaftViewPresetExport:1, kind:"shaft", name:p.name, sections:p.sections },
+      "ShaftView shaft preset: "+p.name, "Shaft preset exported from ShaftView.");
+  }
+  function importShaftPresetData(parsed){
+    if(!parsed || parsed.kind!=="shaft" || !Array.isArray(parsed.sections)) return false;
+    state.shaftPresets.push({ id:uid(), name:parsed.name||"Imported preset", sections:deepCopy(parsed.sections) });
+    save(); renderShaftPresets();
+    return true;
+  }
+  $("shaftPresetImportBtn").addEventListener("click", function(){ $("shaftPresetImportFile").click(); });
+  $("shaftPresetImportFile").addEventListener("change", function(){
+    var file = this.files && this.files[0];
+    this.value = "";
+    if(!file) return;
+    var reader = new FileReader();
+    reader.onload = function(){
+      var parsed;
+      try{ parsed = JSON.parse(reader.result); }catch(e){ alert("That file isn't valid JSON — nothing was imported."); return; }
+      if(!importShaftPresetData(parsed)) alert("That doesn't look like a ShaftView shaft preset export — nothing was imported.");
+    };
+    reader.onerror = function(){ alert("Couldn't read that file."); };
+    reader.readAsText(file);
+  });
   function loadShaftPreset(id){
     var p = state.shaftPresets.find(function(x){ return x.id===id; });
     if(!p) return;
