@@ -47,6 +47,7 @@
   input[type=text], input[type=date]{width:170px; text-align:left;}
   input.name-field{width:140px;}
   input[type=range]{ width:100%; accent-color:var(--accent); height:32px; }
+  input[type=checkbox]{ width:20px; height:20px; accent-color:var(--accent); }
   textarea{ font-size:14px; padding:8px 10px; border-radius:9px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:100%; resize:vertical; font-family:inherit; margin-top:6px; }
   select{width:auto; text-align:left; -webkit-appearance:none; appearance:none; padding-right:26px;
     background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M0 0l5 6 5-6z' fill='%2398989d'/></svg>");
@@ -350,6 +351,16 @@
     </div>
 
     <div class="card">
+      <h2>Scan coverage</h2>
+      <div class="note">Tick the faces/surfaces actually scanned during this inspection, so the report makes the coverage achieved clear at a glance.</div>
+      <div class="row"><label>Near end face scanned</label><input type="checkbox" id="covNearEnd"></div>
+      <div class="row"><label>Far end face scanned</label><input type="checkbox" id="covFarEnd"></div>
+      <div id="covSectionsList"></div>
+      <div class="row slider-row"><label>Coverage limitations / notes</label><textarea id="covNotes" rows="2" placeholder="e.g. near end inaccessible due to coupling"></textarea></div>
+      <div class="field"><span>Coverage achieved</span><strong id="covSummary">&mdash;</strong></div>
+    </div>
+
+    <div class="card">
       <h2>Saved inspections</h2>
       <div class="note">A saved inspection captures the probe, shaft geometry, job details and every indication together, so you can keep multiple shafts straight and come back to any of them later. Use Export to save one as its own file — handy for sending a specific job to someone else or backing it up individually.</div>
       <div class="row"><label>Name</label><input type="text" id="jobSaveName" placeholder="e.g. WO-4471 shaft"></div>
@@ -486,7 +497,8 @@
   function defaultSections(){ return [ {od:60, len:300, id:0}, {od:40, len:200, id:0} ]; }
   function defaultJob(){
     return { jobNumber:"", componentId:"", client:"", inspectionDate:"", inspector:"", certLevel:"",
-      instrument:"", instrumentSerial:"", calDueDate:"", standard:"", acceptanceCriteria:"", notes:"" };
+      instrument:"", instrumentSerial:"", calDueDate:"", standard:"", acceptanceCriteria:"", notes:"",
+      coverageNearEnd:false, coverageFarEnd:false, coverageOD:[], coverageNotes:"" };
   }
 
   var state = {
@@ -506,10 +518,11 @@
 
   function mergeLoadedState(parsed){
     Object.assign(state, parsed);
-    // state.live gained fields (axialOffset) after some saves/backups already existed with
-    // the older shape; Object.assign replaces the whole sub-object, so merge it against
-    // defaults instead of trusting it has every current field.
+    // state.live and state.job have each gained fields after some saves/backups already
+    // existed with an older shape; Object.assign replaces the whole sub-object, so merge
+    // each against current defaults instead of trusting it has every current field.
     state.live = Object.assign({ axialDepth:0, radialPos:0, axialOffset:0 }, parsed.live||{});
+    state.job = Object.assign(defaultJob(), parsed.job||{});
   }
   function load(){
     try{
@@ -727,7 +740,7 @@
     if(name==="shaft") renderRadialSelect();
     if(name==="plan") renderPlan();
     if(name==="live") renderLive();
-    if(name==="analysis") renderAnalysis();
+    if(name==="analysis"){ renderCoverage(); renderAnalysis(); }
   }
   document.querySelectorAll(".tab-btn").forEach(function(b){
     b.addEventListener("click", function(){ showView(b.dataset.view); });
@@ -928,7 +941,16 @@
     sel.value = state.scan.radialIndex;
   }
 
+  // Keeps the per-section OD coverage array the same length as state.sections whenever
+  // sections are added/removed/loaded, regardless of which tab is currently active.
+  function syncCoverageOD(){
+    var arr = state.job.coverageOD || [];
+    while(arr.length < state.sections.length) arr.push(false);
+    arr.length = state.sections.length;
+    state.job.coverageOD = arr;
+  }
   function renderSections(){
+    syncCoverageOD();
     var wrap = $("sectionsList");
     wrap.innerHTML = "";
     if(state.sections.length===0){
@@ -953,9 +975,15 @@
       btn.addEventListener("click", function(){
         var idx = +this.dataset.i;
         var removed = state.sections[idx];
-        state.sections.splice(idx,1); renderSections(); renderRadialSelect(); save();
+        var removedCov = state.job.coverageOD ? state.job.coverageOD[idx] : false;
+        state.sections.splice(idx,1);
+        if(state.job.coverageOD) state.job.coverageOD.splice(idx,1);
+        renderSections(); renderRadialSelect(); renderCoverage(); save();
         showUndoToast("section", function(){
-          state.sections.splice(idx,0,removed); renderSections(); renderRadialSelect(); save();
+          state.sections.splice(idx,0,removed);
+          if(!state.job.coverageOD) state.job.coverageOD = [];
+          state.job.coverageOD.splice(idx,0,removedCov);
+          renderSections(); renderRadialSelect(); renderCoverage(); save();
         });
       });
     });
@@ -963,7 +991,7 @@
   $("addSectionBtn").addEventListener("click", function(){
     var last = state.sections[state.sections.length-1];
     state.sections.push({ od: last ? Math.max(10, last.od-10) : 50, len: last ? last.len : 200, id:0 });
-    renderSections(); renderRadialSelect(); save();
+    renderSections(); renderRadialSelect(); renderCoverage(); save();
   });
 
   /* ---------- Shaft presets ---------- */
@@ -1012,7 +1040,11 @@
     var p = state.shaftPresets.find(function(x){ return x.id===id; });
     if(!p) return;
     state.sections = deepCopy(p.sections);
-    renderSections(); renderRadialSelect(); save();
+    // A loaded preset is a different shaft geometry, so any previously-ticked OD
+    // coverage no longer corresponds to these sections — reset rather than keep
+    // stale, misleading "scanned" ticks against a different section list.
+    state.job.coverageOD = [];
+    renderSections(); renderRadialSelect(); renderCoverage(); save();
   }
   function deleteShaftPreset(id){
     var idx = state.shaftPresets.findIndex(function(x){ return x.id===id; });
@@ -1055,6 +1087,37 @@
   ].forEach(function(pair){
     $(pair[0]).addEventListener("input", function(){ state.job[pair[1]] = this.value; save(); });
   });
+
+  /* ---------- Scan coverage ---------- */
+  function renderCoverage(){
+    syncCoverageOD();
+    $("covNearEnd").checked = !!state.job.coverageNearEnd;
+    $("covFarEnd").checked = !!state.job.coverageFarEnd;
+    $("covNotes").value = state.job.coverageNotes||"";
+    var wrap = $("covSectionsList");
+    wrap.innerHTML = "";
+    state.sections.forEach(function(sec,i){
+      var row = document.createElement("div");
+      row.className = "row";
+      row.innerHTML = '<label>Section '+(i+1)+' OD (&Oslash;'+fmt(sec.od,0)+') scanned</label><input type="checkbox" class="cov-od" data-i="'+i+'"'+(state.job.coverageOD[i]?" checked":"")+'>';
+      wrap.appendChild(row);
+    });
+    wrap.querySelectorAll(".cov-od").forEach(function(cb){
+      cb.addEventListener("change", function(){
+        state.job.coverageOD[+this.dataset.i] = this.checked;
+        save(); updateCoverageSummary();
+      });
+    });
+    updateCoverageSummary();
+  }
+  function updateCoverageSummary(){
+    var total = 2 + state.sections.length;
+    var done = (state.job.coverageNearEnd?1:0) + (state.job.coverageFarEnd?1:0) + state.job.coverageOD.filter(Boolean).length;
+    $("covSummary").textContent = done+" / "+total+" areas"+(done===total ? " (full coverage)" : "");
+  }
+  $("covNearEnd").addEventListener("change", function(){ state.job.coverageNearEnd = this.checked; save(); updateCoverageSummary(); });
+  $("covFarEnd").addEventListener("change", function(){ state.job.coverageFarEnd = this.checked; save(); updateCoverageSummary(); });
+  $("covNotes").addEventListener("input", function(){ state.job.coverageNotes = this.value; save(); });
 
   /* ---------- Saved inspections (jobs) ---------- */
   function renderJobsList(){
@@ -1134,8 +1197,8 @@
     state.scan = deepCopy(d.scan);
     state.sections = deepCopy(d.sections);
     state.indications = deepCopy(d.indications);
-    state.job = deepCopy(d.job);
-    bindProbeForm(); renderSections(); renderRadialSelect(); refreshScanConfigUI(); bindJobForm(); renderAnalysis();
+    state.job = Object.assign(defaultJob(), deepCopy(d.job));
+    bindProbeForm(); renderSections(); renderRadialSelect(); refreshScanConfigUI(); bindJobForm(); renderCoverage(); renderAnalysis();
     save();
   }
   function deleteJob(id){
@@ -1171,7 +1234,7 @@
     state.job = defaultJob();
     state.measuredTime = null;
     state.tolerance = null;
-    bindProbeForm(); renderSections(); renderRadialSelect(); refreshScanConfigUI(); bindJobForm(); renderAnalysis();
+    bindProbeForm(); renderSections(); renderRadialSelect(); refreshScanConfigUI(); bindJobForm(); renderCoverage(); renderAnalysis();
     save();
   });
 
@@ -1849,6 +1912,20 @@
 
     var jobBody = table(["Field","Value"], jobRows) + (state.job.notes ? "<p><strong>Notes:</strong> "+state.job.notes+"</p>" : "");
 
+    var coverageOD = state.job.coverageOD || [];
+    var coverageRows = [
+      ["Near end face", state.job.coverageNearEnd ? "Scanned" : "<strong>Not scanned</strong>"],
+      ["Far end face", state.job.coverageFarEnd ? "Scanned" : "<strong>Not scanned</strong>"]
+    ];
+    state.sections.forEach(function(sec,i){
+      coverageRows.push(["Section "+(i+1)+" OD (Ø"+fmt(sec.od,0)+")", coverageOD[i] ? "Scanned" : "<strong>Not scanned</strong>"]);
+    });
+    var coverageDone = (state.job.coverageNearEnd?1:0) + (state.job.coverageFarEnd?1:0) + coverageOD.filter(Boolean).length;
+    var coverageTotal = 2 + state.sections.length;
+    var coverageBody = table(["Area","Status"], coverageRows) +
+      "<p><strong>Coverage achieved: "+coverageDone+" / "+coverageTotal+" areas"+(coverageDone===coverageTotal?" (full coverage)":"")+"</strong></p>" +
+      (state.job.coverageNotes ? "<p><strong>Limitations / notes:</strong> "+state.job.coverageNotes+"</p>" : "");
+
     var html = "";
     html += "<h1>Ultrasonic Shaft Inspection Report</h1>";
     html += "<div class='meta'>Generated "+new Date().toLocaleString()+"</div>";
@@ -1856,6 +1933,7 @@
     html += section("Probe", table(["Parameter","Value"], probeRows), true);
     html += section("Shaft Geometry", table(["Section","OD","Length","ID","Position from near end"], sectionRows), true);
     html += section("Scan Configuration", table(["Parameter","Value"], scanRows), true);
+    html += section("Scan Coverage", coverageBody, true);
     html += section("Beam Path Diagram", "<div id='reportDiagramHolder'></div>", true);
     html += section("Indications ("+state.indications.length+")",
       state.indications.length ? table(["ID","Type","Position","Radial depth","Time","Amplitude","Clock","Notes"], indRows) : "<p>No indications recorded.</p>",
@@ -1974,6 +2052,7 @@
     renderProbePresets();
     renderShaftPresets();
     bindJobForm();
+    renderCoverage();
     renderJobsList();
     refreshScanConfigUI();
     renderAnalysis();
@@ -2053,6 +2132,7 @@
   renderProbePresets();
   renderShaftPresets();
   bindJobForm();
+  renderCoverage();
   renderJobsList();
   refreshScanConfigUI();
   showView("probe");
